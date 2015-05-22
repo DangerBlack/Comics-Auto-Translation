@@ -253,7 +253,7 @@ def loadMatrix():
 
 #montecarlo(pix,(255,255,255),(0,0,0),0,0,stepx,stepy,100)
 
-'''
+
 media=0
 count=0
 sizex=dx/stepx
@@ -287,7 +287,7 @@ print("La media e': "+str(media))
 #img=whiteBubble(sizex,sizey,bat,pix,stepx,stepy,debugcolor)
 
 saveMatrix(bat,sizex,sizey)
-'''
+
 bat=loadMatrix()
 sizex=len(bat)
 sizey=len(bat[0])
