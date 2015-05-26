@@ -28,8 +28,9 @@ from PIL import Image
 from PIL import ImageFont
 from PIL import ImageDraw
 from copy import copy, deepcopy
-import pyocr
-import pyocr.builders
+import tesseract
+#import pyocr
+#import pyocr.builders
 #import goslate
 
 class Bbox:
@@ -244,15 +245,10 @@ def clearOldText(img,bb,stepx,stepy,textcolor,background):
                 depixelation(img,x,y,1,background)
                 depixelation(img,x,y,2,background)
 
-def writeOnImg(img,text,bb,stepx,stepy,textcolor,gs,leng):
-    font = ImageFont.truetype("/usr/share/fonts/truetype/freefont/FreeSans.ttf",16)
+def writeOnImg(img,text,bb,stepx,stepy,textcolor):
+    font = ImageFont.truetype("/usr/share/fonts/truetype/freefont/FreeSans.ttf",14)
     #img=Image.new("RGBA", (500,250),(255,255,255))
     draw = ImageDraw.Draw(img)
-    text=sanitizeText(text)
-    print(text)
-    #text=gs.translate(text,leng)
-    text=translate(text,leng)
-    print('TRADOTTO: '+text)
     lung=int((bb.maxx-bb.minx)*stepx/12)
     if(lung<=0):
         lung=5
@@ -262,7 +258,7 @@ def writeOnImg(img,text,bb,stepx,stepy,textcolor,gs,leng):
     for line in lines:
         if(line!=""):
             #2*stepx 2*stepy (bubble curvature correction)
-            draw.text((bb.minx*stepx+1*stepx, 1*stepy+bb.miny*stepy+count*16),line,textcolor,font=font)
+            draw.text((bb.minx*stepx+1*stepx, 1*stepy+bb.miny*stepy+count*14),line,textcolor,font=font)
             count=count+1
     draw = ImageDraw.Draw(img)
 
@@ -292,6 +288,7 @@ def translate(to_translate, to_langage="auto", langage="auto"):
     hello you alright?'''
     agents = {'User-Agent':"Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; .NET CLR 1.1.4322; .NET CLR 2.0.50727; .NET CLR 3.0.04506.30)"}
     before_trans = 'class="t0">'
+    to_translate=sanitizeText(to_translate)
     u=quote_plus(remove_non_ascii_1(to_translate))
     #print(u)
     link = "http://translate.google.com/m?hl=%s&sl=%s&q=%s" % (to_langage, langage, str(u))
@@ -303,6 +300,7 @@ def translate(to_translate, to_langage="auto", langage="auto"):
 
 #montecarlo(pix,(255,255,255),(0,0,0),0,0,stepx,stepy,100)
 
+#TODO add an IF for debugging purpose or wrapping it with a function
 '''
 media=0
 count=0
@@ -345,9 +343,15 @@ print('Comicio ad agglomerare')
 cluster=agglomerate(bat,sizex,sizey)
 dialogues=[]
 
-tools = pyocr.get_available_tools()
-tool = tools[0]
+#tools = pyocr.get_available_tools()
+#tool = tools[0]
 #gs=goslate.Goslate()
+api = tesseract.TessBaseAPI()
+api.SetOutputName("outputName");
+api.Init(".","eng",tesseract.OEM_DEFAULT)
+api.SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ?!") #abcdefghijklmnopqrstuvwxyz
+api.SetPageSegMode(tesseract.PSM_AUTO)
+
 gs=''
 for i in np.arange(len(cluster)):
     #q in cluster:
@@ -355,15 +359,18 @@ for i in np.arange(len(cluster)):
     print(str(i)+': cluster in: '+q.toS()+" "+str(q.area()))
     bbox = (q.minx*stepx, q.miny*stepy, q.maxx*stepx+stepx, q.maxy*stepy+stepy)
     working_slice = im.crop(bbox)
-    txt = tool.image_to_string(
+    '''txt = tool.image_to_string(
         working_slice,
         lang='eng',
         builder=pyocr.builders.TextBuilder()
-    )
+    )'''
+    working_slice.save('results/bubble/bubble_'+str(i)+'.png')
+    mImgFile = "results/bubble/bubble_"+str(i)+".png"
+    pixImage=tesseract.pixRead(mImgFile)
+    api.SetImage(pixImage)  
+    outText=api.GetUTF8Text()
     #print(txt)
-    if(len(txt)>0):
-        working_slice.save('results/bubble/bubble_'+str(i)+'.png')
-    dialogues.append([working_slice,txt])
+    dialogues.append([working_slice,outText])
 
 for i in np.arange(len(cluster)):
     q=cluster[i]
@@ -372,7 +379,14 @@ for i in np.arange(len(cluster)):
     txt=bubble[1]
     if(len(txt)>0):
         clearOldText(pix,q,stepx,stepy,textcolor,background)
-        writeOnImg(im,txt,q,stepx,stepy,textcolor,gs,'it')
+        txt=sanitizeText(txt)
+        bubble[1]=txt
+        print("["+str(i)+"]ORIGIN  :"+txt)
+        txt=translate(txt,'it')
+        print('['+str(i)+']TRADOTTO: '+txt)
+        bubble.append(txt)
+        writeOnImg(im,txt,q,stepx,stepy,textcolor)
+  
 
 print('cerco il file')
 num=0
@@ -381,3 +395,21 @@ while(os.path.exists('results/testing_'+str(num)+"_"+filename)):
     num=num+1
 print("Salvato in "+str(num))
 im.save('results/testing_'+str(num)+"_"+filename)
+
+out_file = open("results/debug_"+str(num)+".html","w")
+out_file.write('<html>')
+out_file.write('<link href="../default.css" rel="stylesheet" type="text/css">')
+out_file.write('<meta content="text/html; charset=utf-8" http-equiv="Content-Type" />')
+out_file.write('<ul>')
+for i in np.arange(len(cluster)):
+    bubble=dialogues[i]
+    if(len(bubble)>2):
+        out_file.write('<li>')
+        out_file.write('<div class="img"><img src="bubble/bubble_'+str(i)+'.png" /></div>')
+        out_file.write('<div class="txt"><textarea>'+bubble[1]+'</textarea></div>')
+        out_file.write('<div class="trans"><textarea>'+bubble[2]+'</textarea></div>')
+        out_file.write('</li>')
+out_file.write('</ul>')
+out_file.write('</html>')
+out_file.close()
+
